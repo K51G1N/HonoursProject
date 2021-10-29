@@ -152,6 +152,8 @@ wrapt==1.12.1
 xgboost==1.4.1
 ___________________________________________________________________
 
+Instructions to run my code: File and Folder Set-up
+
 Create a new Folder: e.g 17E4476
 In this folder place all the python files:
     - SourceSystem.py
@@ -161,12 +163,16 @@ In this folder place all the python files:
     - SnipPS.py
     - MultiModel.py
     - MultiModel_Test.py
-    -
+    - DisplayData.py
 In this folder create 4 subfolders:
     -Experiment1
     -Experiment2
     -Experiment3
     -data
+
+Download the MeerKAT uvw coverage
+Link to Google Drive uvw.npy file (130 mb)
+    https://drive.google.com/drive/folders/1L3Dun69lfCyAXWcMajua_qPj59f-FJ24?usp=sharing
 Inside of data place the uvw.npy file
 
 You may then run the SourceSystem.py file
@@ -180,5 +186,13 @@ It will do this for all three experiments.
 It will take a while to get through everything.
 
 All the results and diagrams are in their folders.
+
+DisplayData.py is a file that can be used to look at any of the .npy files. Just specify the parent directory 
+
+eg Extract contains both NPS and PS, giving the absolute path to extract will cycle through all the NPS and PS folders.
+_________________________________________________________________________________________________________________________________
+
+If anything is unclear please contact me 
+g17e4476@campus.ru.ac.za
 
 
