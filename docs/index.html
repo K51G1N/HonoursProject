@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Point Source Finder</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* VOICE everyday-technical: a working instrument people can play with, explained calmly
+   IDEA a radio astronomer's image viewer with a detector overlay drawn on the sky
+   PICTURE the 1344 px dirty image, swept tile by tile, boxes popping in with class and confidence
+   COLOUR night-sky ground in both themes, ice colormap for the sky, coral point sources, lilac extended
+   TYPE Inter Tight 600 for titles and figures, Inter for text
+   LAYOUT laptop: title row with figures, viewer left and inspector right; phone: title, viewer, controls, inspector */
+:root{color-scheme:dark;--bg:#070b14;--panel:#0d1421;--line:#1d2939;--ink:#e8eef2;--mute:#9aaabb;--ps:#ff7a59;--es:#c4a7ff;--ice:#6fb0c2}
+:root[data-theme=light],:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0}
+html,body{margin:0;background:var(--bg);color:var(--ink)}
+body{font:16px/1.55 Inter,system-ui,sans-serif;overflow-x:clip}
+h1,h2,h3,.fig-n{font-family:"Inter Tight",Inter,system-ui,sans-serif;letter-spacing:-.02em;line-height:1.05;margin:0}
+h1{font-size:clamp(32px,4.4vw,48px);text-wrap:balance}
+h2{font-size:clamp(26px,3vw,34px);text-wrap:balance}
+h3{font-size:19px}
+p{margin:0}
+a{color:var(--ice)}
+.wrap{max-width:1240px;margin:0 auto;padding-inline:max(16px,4vw)}
+.band{padding-block:clamp(24px,3.5vw,48px)}
+.top{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);gap:24px 40px;align-items:end;padding-top:clamp(24px,3vw,40px);padding-bottom:20px}
+.lede{color:var(--mute);margin-top:12px;max-width:62ch}
+.by{margin-top:10px;font-size:14px;color:var(--mute)}
+.figs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.fig-b{border-top:1px solid var(--line);padding-top:10px}
+.fig-n{font-size:clamp(26px,3vw,34px);font-weight:600;font-variant-numeric:tabular-nums}
+.fig-l{font-size:13px;color:var(--mute);line-height:1.35;margin-top:4px}
+.app{display:grid;grid-template-columns:minmax(0,1.55fr) minmax(300px,1fr);gap:24px;align-items:start}
+.stage{position:relative;aspect-ratio:1;border-radius:6px;overflow:hidden;background:#04060c;border:1px solid var(--line)}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:pan-y pinch-zoom;cursor:crosshair}
+.stage.zoomed canvas{touch-action:none;cursor:grab}
+.zoom{position:absolute;top:10px;right:10px;display:flex;gap:6px}
+.zoom button{width:44px;height:44px;padding:0;font-size:20px}
+.zoom button.fit{width:auto;padding:0 12px;font-size:14px}
+.status{position:absolute;left:10px;bottom:10px;right:10px;display:flex;justify-content:flex-start;pointer-events:none}
+.status span{background:rgba(7,11,20,.82);border:1px solid var(--line);border-radius:4px;padding:6px 10px;font-size:14px;font-variant-numeric:tabular-nums}
+button{font:600 15px Inter,system-ui,sans-serif;color:var(--ink);background:var(--panel);border:1px solid #2b3a50;border-radius:6px;min-height:44px;padding:0 16px;cursor:pointer}
+button:hover{border-color:#47607d}
+button:focus-visible,input:focus-visible{outline:2px solid var(--ice);outline-offset:2px}
+button.primary{background:var(--ink);color:#070b14;border-color:var(--ink)}
+.controls{display:grid;grid-template-columns:auto minmax(0,1fr) minmax(0,1fr);gap:14px 20px;align-items:end;margin-top:16px}
+.field{display:grid;gap:6px}
+.flabel,.field label{font-size:14px;color:var(--mute)}
+.field b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+.seg{display:flex;border:1px solid #2b3a50;border-radius:6px;overflow:hidden;width:max-content;max-width:100%}
+.seg button{border:0;border-radius:0;background:transparent;min-width:52px;padding:0 12px;font-weight:500}
+.seg button+button{border-left:1px solid #2b3a50}
+.seg button[aria-pressed=true]{background:#1b2a3d;color:#fff;font-weight:600}
+input[type=range]{width:100%;height:44px;margin:0;accent-color:var(--ink);background:transparent}
+.checks{grid-column:2/-1;align-self:end;display:flex;flex-wrap:wrap;gap:6px 22px;font-size:15px}
+.checks label{display:flex;align-items:center;gap:8px;min-height:36px;cursor:pointer}
+.checks input{width:18px;height:18px;accent-color:var(--ice);margin:0}
+.side{display:grid;gap:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:18px}
+.insp{display:grid;grid-template-columns:150px minmax(0,1fr);gap:16px;align-items:start;margin-top:12px}
+#cut{width:150px;height:150px;image-rendering:pixelated;border-radius:4px;background:#04060c;display:block}
+.vlab{font-family:"Inter Tight",Inter,sans-serif;font-size:26px;font-weight:700;line-height:1.1}
+.vconf{color:var(--mute);font-size:14px;margin-top:2px}
+.pbar{display:flex;height:10px;border-radius:5px;overflow:hidden;margin-top:14px;background:#1b2636}
+.pbar i{display:block;height:100%}
+.pbl{display:flex;justify-content:space-between;font-size:13px;color:var(--mute);margin-top:4px}
+dl{display:grid;grid-template-columns:auto minmax(0,1fr);gap:6px 14px;margin:14px 0 0;font-size:14px}
+dt{color:var(--mute)}dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+.hint{font-size:14px;color:var(--mute);margin-top:12px}
+.stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:12px}
+.stats .fig-n{font-size:30px}
+table{border-collapse:collapse;width:100%;font-size:14px;margin-top:16px}
+th,td{padding:6px 4px;border-bottom:1px solid var(--line);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+th{color:var(--mute);font-weight:500}
+.legend{list-style:none;padding:0;margin:12px 0 0;display:grid;gap:9px;font-size:14px;color:var(--mute)}
+.legend li{display:flex;gap:10px;align-items:center}
+.sw{width:16px;height:16px;border:2px solid;flex:none}
+.ring{width:12px;height:12px;border:1.5px solid rgba(255,255,255,.8);border-radius:50%;flex:none;margin:0 2px}
+.esl{width:18px;height:11px;border:2px solid var(--es);border-radius:50%;flex:none;margin-left:-1px}
+.xm{width:16px;flex:none;text-align:center;color:var(--ink);font-weight:600}
+.key{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:0}
+.steps{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:20px;margin-top:22px}
+.step canvas{width:100%;aspect-ratio:1;display:block;border-radius:6px;border:1px solid var(--line);background:#04060c;image-rendering:auto}
+.step canvas.px{image-rendering:pixelated}
+.step h3{margin-top:12px}
+.step p{font-size:15px;color:var(--mute);margin-top:6px}
+.results{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:28px;margin-top:22px}
+.results h3{font-size:17px}
+.results .sub{font-size:14px;color:var(--mute);margin-top:4px;min-height:2.6em}
+.row{display:grid;grid-template-columns:3.2em minmax(0,1fr) 3.4em;gap:10px;align-items:center;margin-top:10px;font-size:14px}
+.track{height:14px;background:#141d2b;border-radius:3px;overflow:hidden}
+.track i{display:block;height:100%;background:#3a4c63}
+.row.svm .track i{background:var(--ps)}
+.row b{font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+.notes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px 40px;margin-top:16px;font-size:15px;color:var(--mute)}
+.notes p+p{margin-top:10px}
+footer{border-top:1px solid var(--line);font-size:14px;color:var(--mute);padding-block:22px}
+@media (max-width:1000px){.app{grid-template-columns:minmax(0,1fr)}.side{grid-template-columns:repeat(2,minmax(0,1fr))}.steps{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:760px){.top{grid-template-columns:minmax(0,1fr)}.controls{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.controls #play,.checks{grid-column:1/-1}}
+@media (max-width:640px){.side{grid-template-columns:minmax(0,1fr)}.results,.notes{grid-template-columns:minmax(0,1fr)}.controls{grid-template-columns:minmax(0,1fr)}.insp{grid-template-columns:110px minmax(0,1fr)}#cut{width:110px;height:110px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<header class="wrap top">
+  <div>
+    <h1>Finding point sources in a dirty image</h1>
+    <p class="lede">A linear SVM sweeps a simulated MeerKAT dirty image tile by tile, boxes each source it finds and decides whether it is a point source or extended emission.</p>
+    <p class="by">Keagan Ellenberger · BSc (Honours) project, Rhodes University, 2021</p>
+  </div>
+  <div class="figs">
+    <div class="fig-b"><div class="fig-n" id="figAcc">89.5%</div><div class="fig-l">accuracy on 1,275 unseen cutouts</div></div>
+    <div class="fig-b"><div class="fig-n">1,100</div><div class="fig-l">simulated sources: 1,000 point, 100 extended</div></div>
+    <div class="fig-b"><div class="fig-n">2,601</div><div class="fig-l">SVM weights, one per pixel of a 51×51 cutout</div></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="app">
+    <div>
+      <div class="stage" id="stage">
+        <canvas id="sky" aria-label="Dirty radio image with detection boxes"></canvas>
+        <div class="zoom">
+          <button id="zin" aria-label="Zoom in">+</button>
+          <button id="zout" aria-label="Zoom out">−</button>
+          <button id="zfit" class="fit">Fit</button>
+        </div>
+        <div class="status"><span id="status">Loading the dirty image…</span></div>
+      </div>
+      <div class="controls">
+        <button id="play" class="primary">Replay scan</button>
+        <div class="field">
+          <span class="flabel" id="tilesLabel">Tile size (pixels)</span>
+          <div class="seg" id="tiles" role="group" aria-labelledby="tilesLabel">
+            <button data-v="32">32</button><button data-v="51" aria-pressed="true">51</button><button data-v="64">64</button><button data-v="96">96</button>
+          </div>
+        </div>
+        <div class="field">
+          <label for="thr">Detection threshold <b id="thrv">2.0σ</b></label>
+          <input type="range" id="thr" min="1" max="6" step="0.5" value="2">
+        </div>
+        <div class="field">
+          <span class="flabel" id="layerLabel">Image</span>
+          <div class="seg" id="layer" role="group" aria-labelledby="layerLabel">
+            <button data-v="dirty" aria-pressed="true">Dirty image</button><button data-v="sky">True sky</button>
+          </div>
+        </div>
+        <div class="checks">
+          <label><input type="checkbox" id="truth"> Ground truth</label>
+          <label><input type="checkbox" id="grid" checked> Tile grid</label>
+          <label><input type="checkbox" id="labels" checked> Labels</label>
+        </div>
+      </div>
+      <p class="hint">Hover a tile to inspect it. Click anywhere to classify that spot. Zoom with the buttons, a pinch, or Ctrl + scroll, then drag to pan.</p>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <h3 id="inspTitle">Tile inspector</h3>
+        <div class="insp">
+          <canvas id="cut" width="51" height="51" aria-label="51 by 51 pixel cutout the model sees"></canvas>
+          <div>
+            <div class="vlab" id="vLabel">Waiting for the scan</div>
+            <div class="vconf" id="vConf">The model sees the 51×51 cutout on the left.</div>
+            <div class="pbar" aria-hidden="true"><i id="pbPS" style="width:50%;background:var(--ps)"></i><i id="pbES" style="width:50%;background:var(--es)"></i></div>
+            <div class="pbl"><span>Point source</span><span>Extended</span></div>
+          </div>
+        </div>
+        <dl id="facts"></dl>
+      </div>
+      <div class="card">
+        <h3>This scan</h3>
+        <div class="stats">
+          <div><div class="fig-n" id="sN">0</div><div class="fig-l">detections</div></div>
+          <div><div class="fig-n" id="sAgree">–</div><div class="fig-l">agree with ground truth</div></div>
+          <div><div class="fig-n" id="sPS" style="color:var(--ps)">0</div><div class="fig-l">called point source</div></div>
+          <div><div class="fig-n" id="sES" style="color:var(--es)">0</div><div class="fig-l">called extended</div></div>
+        </div>
+        <table aria-label="Detections by true kind and model verdict">
+          <thead><tr><th>Truth at the peak</th><th><span class="key" style="background:var(--ps)"></span>PS</th><th><span class="key" style="background:var(--es)"></span>Ext</th></tr></thead>
+          <tbody id="conf"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <h3>Reading the image</h3>
+        <ul class="legend">
+          <li><span class="sw" style="border-color:var(--ps)"></span>Called point source, with the model's confidence</li>
+          <li><span class="sw" style="border-color:var(--es)"></span>Called extended</li>
+          <li><span class="ring"></span>True point source (ground truth on)</li>
+          <li><span class="esl"></span>True extended source, drawn at half its peak</li>
+          <li><span class="xm">✗</span>On a label: the model got that one wrong</li>
+        </ul>
+        <p class="hint">Each box is the 51×51 window the model looked at, centred on its tile's brightest peak.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <h2>How a tile becomes a verdict</h2>
+    <div class="steps">
+      <div class="step"><canvas id="st1" width="256" height="256"></canvas><h3>1. The true sky</h3><p>Point sources and Gaussian blobs placed at random, then observed through MeerKAT's uv coverage.</p></div>
+      <div class="step"><canvas id="st2" width="256" height="256"></canvas><h3>2. What the telescope gives you</h3><p>The dirty image: every source smeared by the point spread function, plus noise. This is all the model ever sees.</p></div>
+      <div class="step"><canvas id="st3" width="256" height="256"></canvas><h3>3. Tile, find the peak, test it</h3><p id="st3p">Each tile's brightest local peak is kept if it rises 2σ above a SExtractor-style background mesh.</p></div>
+      <div class="step"><canvas id="st4" class="px" width="51" height="51"></canvas><h3>4. One dot product decides</h3><p>The SVM's learned weights: a bright core minus a dark ring. Coral pulls towards point source, lilac towards extended.</p></div>
+    </div>
+  </section>
+
+  <section class="band">
+    <h2>The linear SVM held up as the images got harder</h2>
+    <p class="lede">Test accuracy (%) of the four classifiers in the thesis, each tuned with grid search.</p>
+    <div class="results" id="results"></div>
+  </section>
+
+  <section class="band">
+    <h2>About this demo</h2>
+    <div class="notes">
+      <div>
+        <p>The image is the unseen test image from the thesis's third experiment, simulated with ducc0 from MeerKAT uv coverage: 1,000 point sources and 100 extended sources. The ground truth was rebuilt from the simulation's random seed and matches the saved image exactly.</p>
+        <p>The model was retrained with the thesis settings (linear kernel, C = 10, three-fold grid search) on the Experiment 3 training cutouts. Unlike the original test script, it scales unseen data with the training scaler. It scores 89.5% on all 1,275 unseen cutouts; the thesis reported 90.2% on a 765-cutout subset.</p>
+      </div>
+      <div>
+        <p>The classifier is binary: point source or not. In this image almost everything that isn't a point source is extended emission, so the second class is shown as "Extended". Empty tiles are filtered out before the model is asked, by the detection threshold.</p>
+        <p>Everything runs in your browser. Ground truth marks a detection correct when a true point source lies within 2 pixels of its peak, or when it was called extended and no point source is there.</p>
+      </div>
+    </div>
+  </section>
+</main>
+<footer class="wrap">Finding point sources in a dirty image · Keagan Ellenberger · Supervised by Dane Brown · Rhodes University, 2021</footer>
+
+<script src="core.js"></script>
+<script>
+{
+const $ = s => document.querySelector(s);
+const STOPS = [[0, "#04060c"], [0.25, "#0d2438"], [0.5, "#1d5a73"], [0.75, "#6fb0c2"], [0.92, "#d7eef2"], [1, "#ffffff"]];
+const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+const LUT = new Uint8Array(256 * 3);
+for (let i = 0; i < 256; i++) {
+  const v = i / 255;
+  let k = 0;
+  while (k < STOPS.length - 2 && v > STOPS[k + 1][0]) k++;
+  const [a, ca] = STOPS[k], [b, cb] = STOPS[k + 1];
+  const t = Math.min(Math.max((v - a) / (b - a), 0), 1);
+  const A = hex(ca), B = hex(cb);
+  for (let j = 0; j < 3; j++) LUT[i * 3 + j] = Math.round(A[j] + (B[j] - A[j]) * t);
+}
+const COL = { ps: "#ff7a59", es: "#c4a7ff" };
+const CROP = { r: 772, c: 708, n: 256 };
+const RESULTS = [
+  { t: "Experiment 1", s: "100 point sources vs noise", v: [["SVM", 79.16], ["RF", 89.16], ["DT", 91.66], ["k-NN", 80]] },
+  { t: "Experiment 2", s: "1,000 point sources vs noise", v: [["SVM", 89.66], ["RF", 85.33], ["DT", 81], ["k-NN", 73.58]] },
+  { t: "Experiment 3", s: "1,000 point sources vs 100 extended, Hogbom candidates", v: [["SVM", 90.19], ["RF", 85.22], ["DT", 76.07], ["k-NN", 72.54]] }
+];
+$("#results").innerHTML = RESULTS.map(e => `<div><h3>${e.t}</h3><p class="sub">${e.s}</p>${e.v.map(([m, a]) =>
+  `<div class="row${m === "SVM" ? " svm" : ""}"><span>${m}</span><span class="track"><i style="width:${a}%"></i></span><b>${a.toFixed(1)}</b></div>`).join("")}</div>`).join("");
+
+const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const cv = $("#sky"), ctx = cv.getContext("2d"), stage = $("#stage");
+const st = { T: 51, thr: 2, layer: "dirty", truth: false, grid: true, labels: true, dets: [], byTile: new Map(),
+  revealed: 0, head: -1, scanning: false, hover: null, probe: null, s: 1, fit: 1, ox: 0, oy: 0 };
+let D = null, N = 1344, model = null, data = null, base = {}, esImg = null, raf = 0, dpr = 1;
+
+const setStatus = t => { $("#status").textContent = t; };
+const loadImg = src => new Promise((ok, no) => { const im = new Image(); im.onload = () => ok(im); im.onerror = no; im.src = src; });
+const pct = v => Math.round(v * 100) + "%";
+const nTiles = () => Math.ceil(N / st.T);
+
+function paint(c, w, h, fn) {
+  const g = c.getContext("2d"), id = g.createImageData(w, h);
+  for (let i = 0; i < w * h; i++) { const k = fn(i); id.data[4 * i] = LUT[3 * k]; id.data[4 * i + 1] = LUT[3 * k + 1]; id.data[4 * i + 2] = LUT[3 * k + 2]; id.data[4 * i + 3] = 255; }
+  g.putImageData(id, 0, 0);
+}
+function makeBase() {
+  const samp = [];
+  for (let i = 0; i < N * N; i += 37) samp.push(D.img[i]);
+  samp.sort((a, b) => a - b);
+  const lo = samp[Math.floor(samp.length * 0.005)], hi = samp[Math.floor(samp.length * 0.999)];
+  const c = document.createElement("canvas"); c.width = c.height = N;
+  paint(c, N, N, i => Math.round(255 * Math.pow(Math.min(Math.max((D.img[i] - lo) / (hi - lo), 0), 1), 0.85)));
+  base.dirty = c;
+}
+
+function resize() {
+  const w = cv.clientWidth; if (!w) return;
+  dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(w * dpr); cv.height = Math.round(w * dpr);
+  const wasFit = st.s <= st.fit * 1.001;
+  st.fit = w / N;
+  if (wasFit) { st.s = st.fit; st.ox = 0; st.oy = 0; } else clampView();
+  draw();
+}
+const ro = new ResizeObserver(resize);
+ro.observe(cv);
+
+function clampView() {
+  const w = cv.clientWidth, z = N * st.s;
+  st.ox = Math.min(0, Math.max(w - z, st.ox));
+  st.oy = Math.min(0, Math.max(w - z, st.oy));
+  stage.classList.toggle("zoomed", st.s > st.fit * 1.001);
+}
+function zoomAt(f, sx, sy) {
+  const ns = Math.min(Math.max(st.s * f, st.fit), 10);
+  st.ox = sx - (sx - st.ox) * ns / st.s; st.oy = sy - (sy - st.oy) * ns / st.s; st.s = ns;
+  clampView(); draw();
+}
+
+function drawBox(d, tag, hi, probe) {
+  const w = cv.clientWidth, s = st.s, x = st.ox + (d.q - 26) * s, y = st.oy + (d.p - 26) * s, z = 51 * s;
+  if (x > w || y > w || x + z < 0 || y + z < 0) return;
+  const col = d.isPS ? COL.ps : COL.es;
+  ctx.lineWidth = hi ? 2.5 : 1.5; ctx.strokeStyle = col;
+  if (probe) ctx.setLineDash([6, 4]);
+  ctx.strokeRect(x, y, z, z); ctx.setLineDash([]);
+  if (hi) { ctx.lineWidth = 1; ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.strokeRect(x - 3, y - 3, z + 6, z + 6); }
+  if (!tag) return;
+  const wrong = st.truth && d.isPS !== (d.truth.kind === "ps");
+  const txt = (d.isPS ? "PS " : "Ext ") + pct(d.conf) + (wrong ? " ✗" : "");
+  const tw = ctx.measureText(txt).width + 10, ty = y - 20 < 0 ? y : y - 20;
+  ctx.fillStyle = col; ctx.fillRect(x, ty, tw, 20);
+  ctx.fillStyle = "#070b14"; ctx.fillText(txt, x + 5, ty + 14.5);
+}
+
+function draw() {
+  if (!D) return;
+  const w = cv.clientWidth, s = st.s, z = N * s;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = "#04060c"; ctx.fillRect(0, 0, w, w);
+  ctx.imageSmoothingEnabled = s < 2;
+  ctx.drawImage(st.layer === "sky" ? base.sky : base.dirty, st.ox, st.oy, z, z);
+  if (st.truth) {
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(esImg, st.ox, st.oy, z, z);
+    ctx.strokeStyle = "rgba(255,255,255,.7)"; ctx.lineWidth = 1; ctx.beginPath();
+    const r = Math.max(3, 3 * s);
+    for (const [p, q] of data.ps) {
+      const x = st.ox + (q + .5) * s, y = st.oy + (p + .5) * s;
+      if (x < -r || y < -r || x > w + r || y > w + r) continue;
+      ctx.moveTo(x + r, y); ctx.arc(x, y, r, 0, 6.2832);
+    }
+    ctx.stroke();
+  }
+  if (st.grid && st.T * s >= 8) {
+    ctx.strokeStyle = "rgba(232,238,242,.13)"; ctx.lineWidth = 1; ctx.beginPath();
+    for (let k = 0; k <= N; k += st.T) {
+      const a = Math.round(st.ox + k * s) + .5, b = Math.round(st.oy + k * s) + .5;
+      ctx.moveTo(a, st.oy); ctx.lineTo(a, st.oy + z); ctx.moveTo(st.ox, b); ctx.lineTo(st.ox + z, b);
+    }
+    ctx.stroke();
+  }
+  if (st.scanning && st.head >= 0) {
+    const nt = nTiles(), r0 = Math.floor(st.head / nt) * st.T, c0 = (st.head % nt) * st.T;
+    ctx.fillStyle = "rgba(232,238,242,.06)"; ctx.fillRect(st.ox, st.oy + r0 * s, z, st.T * s);
+    ctx.fillStyle = "rgba(232,238,242,.30)"; ctx.fillRect(st.ox + c0 * s, st.oy + r0 * s, st.T * s, st.T * s);
+    ctx.strokeStyle = "#fff"; ctx.lineWidth = 2; ctx.strokeRect(st.ox + c0 * s, st.oy + r0 * s, st.T * s, st.T * s);
+  }
+  ctx.font = "600 13px Inter, system-ui, sans-serif";
+  const tags = st.labels && 51 * s >= 40;
+  for (let i = 0; i < st.revealed; i++) drawBox(st.dets[i], tags, st.dets[i] === st.hover, false);
+  if (st.probe) drawBox(st.probe, true, true, true);
+}
+
+function drawCut(d) {
+  const c = $("#cut"), vals = new Float64Array(51 * 51);
+  let lo = Infinity, hi = -Infinity;
+  for (let a = 0; a < 51; a++) for (let b = 0; b < 51; b++) {
+    const r = d.p - 26 + a, q = d.q - 26 + b;
+    const v = r >= 0 && r < N && q >= 0 && q < N ? D.img[r * N + q] : NaN;
+    vals[a * 51 + b] = v; if (v < lo) lo = v; if (v > hi) hi = v;
+  }
+  paint(c, 51, 51, i => isNaN(vals[i]) ? 0 : Math.round(255 * Math.min(Math.max((vals[i] - lo) / (hi - lo || 1), 0), 1)));
+}
+const KIND = { ps: "point source", es: "extended source", bg: "neither (noise or sidelobe)" };
+function inspect(d, title) {
+  $("#inspTitle").textContent = title;
+  if (!d) {
+    $("#vLabel").textContent = "Empty tile"; $("#vConf").textContent = `No peak rises ${st.thr.toFixed(1)}σ above the background here, so the model is not asked.`;
+    $("#pbPS").style.width = "0%"; $("#pbES").style.width = "0%"; $("#facts").innerHTML = "";
+    $("#cut").getContext("2d").clearRect(0, 0, 51, 51); return;
+  }
+  drawCut(d);
+  $("#vLabel").textContent = d.isPS ? "Point source" : "Extended";
+  $("#vLabel").style.color = d.isPS ? COL.ps : COL.es;
+  $("#vConf").textContent = `${pct(d.conf)} confident` + (d.prom < st.thr ? `, but below the ${st.thr.toFixed(1)}σ detection threshold` : "");
+  $("#pbPS").style.width = (d.pPS * 100).toFixed(1) + "%"; $("#pbES").style.width = ((1 - d.pPS) * 100).toFixed(1) + "%";
+  const right = d.isPS === (d.truth.kind === "ps");
+  const tr = KIND[d.truth.kind] + (d.truth.flux ? ` (flux ${d.truth.flux})` : "");
+  $("#facts").innerHTML = `<dt>Peak pixel</dt><dd>row ${d.p}, col ${d.q}</dd><dt>Above background</dt><dd>${d.prom.toFixed(1)}σ</dd>
+    <dt>SVM score</dt><dd>${d.d.toFixed(2)}</dd><dt>Ground truth</dt><dd>${tr}</dd><dt>Verdict</dt><dd>${right ? "✓ correct" : "✗ wrong"}</dd>`;
+}
+
+function stats() {
+  const ds = st.dets.slice(0, st.revealed);
+  const n = ds.length, nps = ds.filter(d => d.isPS).length;
+  const ok = ds.filter(d => d.isPS === (d.truth.kind === "ps")).length;
+  $("#sN").textContent = n; $("#sPS").textContent = nps; $("#sES").textContent = n - nps;
+  $("#sAgree").textContent = n ? (100 * ok / n).toFixed(1) + "%" : "–";
+  $("#conf").innerHTML = ["ps", "es", "bg"].map(k => {
+    const row = ds.filter(d => d.truth.kind === k);
+    const lab = { ps: "Point source", es: "Extended source", bg: "Neither" }[k];
+    return `<tr><td>${lab}</td><td>${row.filter(d => d.isPS).length}</td><td>${row.filter(d => !d.isPS).length}</td></tr>`;
+  }).join("");
+}
+
+function rescan() {
+  st.dets = D.scan(st.T, st.thr);
+  const nt = nTiles();
+  st.byTile = new Map(st.dets.map(d => [(d.tile[0] / st.T) * nt + d.tile[1] / st.T, d]));
+  st.dets.forEach(d => { d.ti = (d.tile[0] / st.T) * nt + d.tile[1] / st.T; });
+  st.hover = null;
+  drawStep3();
+}
+function finish() {
+  cancelAnimationFrame(raf); st.scanning = false; st.head = -1; st.revealed = st.dets.length;
+  setStatus(`Scan complete: ${st.dets.length} detections in ${nTiles() ** 2} tiles` + (st.labels && 51 * st.s < 40 ? ". Press + to read the labels" : ""));
+  $("#play").textContent = "Replay scan"; stats(); draw();
+}
+function play() {
+  cancelAnimationFrame(raf);
+  if (reduce) { finish(); return; }
+  const tiles = nTiles() ** 2, t0 = performance.now(), dur = 5200;
+  st.scanning = true; st.revealed = 0; st.probe = null; $("#play").textContent = "Skip to end";
+  const step = now => {
+    const f = Math.min((now - t0) / dur, 1);
+    st.head = Math.min(Math.floor(f * tiles), tiles - 1);
+    while (st.revealed < st.dets.length && st.dets[st.revealed].ti <= st.head) st.revealed++;
+    if (st.revealed && !st.hover) inspect(st.dets[st.revealed - 1], "Latest detection");
+    setStatus(`Scanning tile ${st.head + 1} of ${tiles}`);
+    stats(); draw();
+    if (f < 1) raf = requestAnimationFrame(step); else finish();
+  };
+  raf = requestAnimationFrame(step);
+}
+
+function toImg(e) {
+  const b = cv.getBoundingClientRect(), x = e.clientX - b.left, y = e.clientY - b.top;
+  return { x, y, r: Math.floor((y - st.oy) / st.s), c: Math.floor((x - st.ox) / st.s) };
+}
+let drag = null;
+cv.addEventListener("pointerdown", e => { drag = { x: e.clientX, y: e.clientY, ox: st.ox, oy: st.oy, moved: false }; if (st.s > st.fit * 1.001) cv.setPointerCapture(e.pointerId); });
+cv.addEventListener("pointermove", e => {
+  if (!D) return;
+  if (drag && st.s > st.fit * 1.001 && (e.buttons & 1 || e.pointerType !== "mouse")) {
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+    if (Math.abs(dx) + Math.abs(dy) > 4) drag.moved = true;
+    st.ox = drag.ox + dx; st.oy = drag.oy + dy; clampView(); draw(); return;
+  }
+  if (e.pointerType !== "mouse" || st.scanning) return;
+  const { r, c } = toImg(e);
+  if (r < 0 || c < 0 || r >= N || c >= N) return;
+  const ti = Math.floor(r / st.T) * nTiles() + Math.floor(c / st.T);
+  const d = st.byTile.get(ti) || null;
+  if (d === st.hover && d) return;
+  st.hover = d; inspect(d, "Hovered tile"); draw();
+});
+cv.addEventListener("pointerleave", () => { if (st.hover) { st.hover = null; draw(); } });
+cv.addEventListener("pointerup", e => {
+  const wasDrag = drag && drag.moved; drag = null;
+  if (wasDrag || !D) return;
+  const { r, c } = toImg(e);
+  if (r < 0 || c < 0 || r >= N || c >= N) return;
+  st.probe = D.probe(r, c, 60);
+  inspect(st.probe, "Your click");
+  setStatus(`Your click: ${st.probe.isPS ? "point source" : "extended"}, ${pct(st.probe.conf)} confident`);
+  draw();
+});
+cv.addEventListener("wheel", e => {
+  if (!(e.ctrlKey || e.metaKey) || !D) return;
+  e.preventDefault();
+  const { x, y } = toImg(e); zoomAt(Math.exp(-e.deltaY * 0.0025), x, y);
+}, { passive: false });
+$("#zin").onclick = () => zoomAt(1.6, cv.clientWidth / 2, cv.clientWidth / 2);
+$("#zout").onclick = () => zoomAt(1 / 1.6, cv.clientWidth / 2, cv.clientWidth / 2);
+$("#zfit").onclick = () => { st.s = st.fit; st.ox = st.oy = 0; clampView(); draw(); };
+
+function seg(id, fn) {
+  const g = $(id);
+  g.addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    g.querySelectorAll("button").forEach(x => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+    fn(b.dataset.v);
+  });
+}
+seg("#tiles", v => { st.T = +v; if (!D) return; rescan(); play(); });
+seg("#layer", v => { st.layer = v; draw(); });
+$("#thr").addEventListener("input", e => {
+  st.thr = +e.target.value; $("#thrv").textContent = st.thr.toFixed(1) + "σ";
+  $("#st3p").textContent = `Each tile's brightest local peak is kept if it rises ${st.thr.toFixed(1)}σ above a SExtractor-style background mesh.`;
+  if (!D) return; rescan(); finish();
+});
+$("#truth").onchange = e => { st.truth = e.target.checked; draw(); };
+$("#grid").onchange = e => { st.grid = e.target.checked; draw(); };
+$("#labels").onchange = e => { st.labels = e.target.checked; draw(); };
+$("#play").onclick = () => { if (!D) return; st.scanning ? finish() : play(); };
+
+function drawSteps() {
+  const g1 = $("#st1").getContext("2d"), g2 = $("#st2").getContext("2d");
+  g1.drawImage(base.sky, CROP.c, CROP.r, CROP.n, CROP.n, 0, 0, 256, 256);
+  g2.drawImage(base.dirty, CROP.c, CROP.r, CROP.n, CROP.n, 0, 0, 256, 256);
+  const W = D.W; let m = 0;
+  for (const v of W) m = Math.max(m, Math.abs(v));
+  const g4 = $("#st4").getContext("2d"), id = g4.createImageData(51, 51), P = hex(COL.ps), E = hex(COL.es), Z = [10, 15, 26];
+  for (let i = 0; i < 2601; i++) {
+    const t = Math.min(Math.abs(W[i]) / m, 1), C = W[i] >= 0 ? P : E;
+    for (let j = 0; j < 3; j++) id.data[4 * i + j] = Math.round(Z[j] + (C[j] - Z[j]) * t);
+    id.data[4 * i + 3] = 255;
+  }
+  g4.putImageData(id, 0, 0);
+  drawStep3();
+}
+function drawStep3() {
+  if (!base.dirty) return;
+  const g = $("#st3").getContext("2d");
+  g.drawImage(base.dirty, CROP.c, CROP.r, CROP.n, CROP.n, 0, 0, 256, 256);
+  g.strokeStyle = "rgba(232,238,242,.25)"; g.lineWidth = 1; g.beginPath();
+  for (let k = 0; k <= N; k += st.T) {
+    const a = k - CROP.c + .5, b = k - CROP.r + .5;
+    if (a >= 0 && a <= 256) { g.moveTo(a, 0); g.lineTo(a, 256); }
+    if (b >= 0 && b <= 256) { g.moveTo(0, b); g.lineTo(256, b); }
+  }
+  g.stroke();
+  for (const d of st.dets) {
+    const x = d.q - 26 - CROP.c, y = d.p - 26 - CROP.r;
+    if (x > 256 || y > 256 || x + 51 < 0 || y + 51 < 0) continue;
+    g.lineWidth = 2; g.strokeStyle = d.isPS ? COL.ps : COL.es; g.strokeRect(x, y, 51, 51);
+  }
+}
+
+Promise.all([fetch("data.json").then(r => r.json()), fetch("model.json").then(r => r.json()), loadImg("sky.png"), loadImg("es_outline.png")])
+  .then(([dat, mod, sky, eso]) => {
+    data = dat; model = mod; esImg = eso; N = dat.N;
+    setStatus("Preparing the detector…");
+    setTimeout(() => {
+      D = Detector.build(dat, mod);
+      makeBase();
+      const c = document.createElement("canvas"); c.width = c.height = N; c.getContext("2d").drawImage(sky, 0, 0); base.sky = c;
+      $("#figAcc").textContent = (mod.unseen_acc * 100).toFixed(1) + "%";
+      rescan(); drawSteps(); resize(); stats(); play();
+    }, 40);
+  })
+  .catch(() => setStatus("Could not load the image data. Reload the page to try again."));
+if (document.fonts) document.fonts.ready.then(draw);
+}
+</script>
+</body>
+</html>
